@@ -43,9 +43,17 @@ def analyze_url(url, quiet=False):
         if "bank" not in name.lower() and "credit union" not in name.lower():
             # Try to find a better name in the text
             # Look for "X Bank" or "X Credit Union"
-            name_match = re.search(r"([A-Z][a-zA-Z0-9'\s]+(?:Bank|Credit Union))", target_text)
+            # Try to find a better name in the text
+            # Look for "X Bank" or "X Credit Union"
+            # Restrict to a reasonable length (e.g., 50 chars) and avoid capturing newlines excessively
+            # We use [ \t] instead of \s to avoid matching across lines if possible, though inner_text might flatten it.
+            # We'll limit the prefix to 50 chars.
+            name_match = re.search(r"([A-Z][a-zA-Z0-9'\s]{0,50}?(?:Bank|Credit Union))", target_text)
             if name_match:
-                name = name_match.group(1).strip()
+                candidate = name_match.group(1).strip()
+                # Sanity check: shouldn't contain newlines or be too long
+                if len(candidate) < 60 and "\n" not in candidate:
+                    name = candidate
             else:
                 # Fallback to domain if still bad
                 from urllib.parse import urlparse

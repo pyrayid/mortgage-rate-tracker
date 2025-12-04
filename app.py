@@ -14,6 +14,22 @@ st.set_page_config(page_title="Mortgage Rate Tracker", layout="wide")
 st.title("Mortgage Rate Tracker")
 st.markdown("Track and compare daily mortgage rates from various banks and credit unions. Get notified when rates drop!")
 
+# --- Playwright Setup for Streamlit Cloud ---
+@st.cache_resource
+def install_playwright():
+    import subprocess
+    import sys
+    try:
+        # Check if we are on Streamlit Cloud (or just try to install)
+        # We use a flag file to avoid running this every time if possible, 
+        # but st.cache_resource handles the "run once" part for the session/runtime.
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+        print("Playwright Chromium installed successfully.")
+    except Exception as e:
+        print(f"Error installing Playwright: {e}")
+
+install_playwright()
+
 # --- Google Sheets Helper ---
 @st.cache_resource
 def get_gspread_client():
@@ -302,13 +318,31 @@ if df is not None and not df.empty:
                         # Check if already exists
                         configs = load_configs()
                         exists = False
+                        
+                        # Extract domain from new_url for stricter check
+                        # User requested: check main domain without subpages
+                        try:
+                            new_domain = urlparse(new_url).netloc
+                            if new_domain.startswith("www."):
+                                new_domain = new_domain[4:]
+                        except:
+                            new_domain = new_url
+
                         for config in configs:
-                            if config['url'] == new_url:
+                            # Extract domain from config url
+                            try:
+                                config_domain = urlparse(config['url']).netloc
+                                if config_domain.startswith("www."):
+                                    config_domain = config_domain[4:]
+                            except:
+                                config_domain = config['url']
+                                
+                            if config_domain == new_domain:
                                 exists = True
                                 break
                         
                         if exists:
-                            msg = "Bank already tracked by URL."
+                            msg = f"Bank from domain '{new_domain}' is already tracked."
                             st.warning(msg)
                         else:
                             with st.spinner("Analyzing URL..."):
