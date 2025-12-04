@@ -12,6 +12,7 @@ import create_bank_config
 st.set_page_config(page_title="Mortgage Rate Tracker", layout="wide")
 
 st.title("Mortgage Rate Tracker")
+st.markdown("Track and compare daily mortgage rates from various banks and credit unions. Get notified when rates drop!")
 
 # --- Google Sheets Helper ---
 @st.cache_resource
@@ -132,14 +133,25 @@ if df is not None and not df.empty:
         df = df.drop(columns=["Timestamp"])
         df = df.drop(columns=["Timestamp"])
     
-    # Filter by Loan Type
-    if "Loan Type" in df.columns:
-        loan_types = sorted(df["Loan Type"].unique().tolist())
-        default_selection = ["Fixed 30"] if "Fixed 30" in loan_types else loan_types
-        selected_types = st.multiselect("Filter by Loan Type", loan_types, default=default_selection)
-        
-        if selected_types:
-            df = df[df["Loan Type"].isin(selected_types)]
+    # Filters
+    col_filter1, col_filter2 = st.columns(2)
+    
+    with col_filter1:
+        # Filter by Loan Type
+        if "Loan Type" in df.columns:
+            loan_types = sorted(df["Loan Type"].unique().tolist())
+            default_selection = ["Fixed 30"] if "Fixed 30" in loan_types else loan_types
+            selected_types = st.multiselect("Filter by Loan Type", loan_types, default=default_selection)
+            
+            if selected_types:
+                df = df[df["Loan Type"].isin(selected_types)]
+
+    with col_filter2:
+        # Search by Bank Name
+        if "Bank Name" in df.columns:
+            search_term = st.text_input("Search by Bank Name", placeholder="e.g. Delta")
+            if search_term:
+                df = df[df["Bank Name"].str.contains(search_term, case=False, na=False)]
 
     # Clean and Sort APR
     if "APR" in df.columns:
@@ -267,99 +279,112 @@ if df is not None and not df.empty:
         st.subheader("Add New Bank or Credit Union")
         # Wrap in form for outline consistency
         with st.form("add_bank_form"):
-            new_url = st.text_input("Enter page url with mortgage rates")
+            new_url = st.text_input("Enter the URL of the page displaying mortgage rates", placeholder="http://www.example.com/mortgagerates")
             submitted_bank = st.form_submit_button("Add Bank")
 
             if submitted_bank:
                 if not new_url:
                     st.warning("Please enter a URL.")
                 else:
-                    # Check if already exists
-                    configs = load_configs()
-                    exists = False
-                    for config in configs:
-                        if config['url'] == new_url:
-                            exists = True
-                            break
+                    # Validate URL
+                    from urllib.parse import urlparse
                     
-                    if exists:
-                        msg = "Bank already tracked by URL."
-                        st.warning(msg)
+                    def is_valid_url(url):
+                        try:
+                            result = urlparse(url)
+                            return all([result.scheme, result.netloc])
+                        except:
+                            return False
+                    
+                    if not is_valid_url(new_url):
+                        st.error("Please enter a valid URL (e.g., https://www.example.com).")
                     else:
-                        with st.spinner("Analyzing URL..."):
-                            import subprocess
-                            import sys
-                            
-                            try:
-                                # Run config generator in subprocess
-                                result = subprocess.check_output(
-                                    [sys.executable, "create_bank_config.py", new_url, "--json"],
-                                    text=True
-                                )
+                        # Check if already exists
+                        configs = load_configs()
+                        exists = False
+                        for config in configs:
+                            if config['url'] == new_url:
+                                exists = True
+                                break
+                        
+                        if exists:
+                            msg = "Bank already tracked by URL."
+                            st.warning(msg)
+                        else:
+                            with st.spinner("Analyzing URL..."):
+                                import subprocess
+                                import sys
                                 
-                                if result.strip():
-                                    new_config = json.loads(result)
+                                try:
+                                    # Run config generator in subprocess
+                                    result = subprocess.check_output(
+                                        [sys.executable, "create_bank_config.py", new_url, "--json"],
+                                        text=True
+                                    )
                                     
-                                    # Check if name already exists
-                                    name_exists = False
-                                    for config in configs:
-                                        if config['name'] == new_config['name']:
-                                            name_exists = True
-                                            break
-                                    
-                                    if name_exists:
-                                        msg = f"Bank with name '{new_config['name']}' already exists."
-                                        st.error(msg)
-                                    else:
-                                        # Extract found values for display
-                                        found_values = new_config.pop("found_values", {})
+                                    if result.strip():
+                                        new_config = json.loads(result)
                                         
-                                        save_config(new_config)
+                                        # Check if name already exists
+                                        name_exists = False
+                                        for config in configs:
+                                            if config['name'] == new_config['name']:
+                                                name_exists = True
+                                                break
                                         
-                                        # Construct success message
-                                        rates_msg = []
-                                        new_rows = []
-                                        
-                                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                        if last_refreshed:
-                                            timestamp = last_refreshed.strftime("%Y-%m-%d %H:%M:%S")
-
-                                        for label, data in found_values.items():
-                                            rate = data['rate']
-                                            apr = data['apr']
-                                            rates_msg.append(f"{label}: {rate}")
+                                        if name_exists:
+                                            msg = f"Bank with name '{new_config['name']}' already exists."
+                                            st.error(msg)
+                                        else:
+                                            # Extract found values for display
+                                            found_values = new_config.pop("found_values", {})
                                             
-                                            new_rows.append({
-                                                "Date": timestamp,
-                                                "Bank Name": new_config['name'],
-                                                "Loan Type": label,
-                                                "Rate": rate,
-                                                "APR": apr
-                                            })
-                                        
-                                        # Append to Sheet
-                                        if new_rows:
-                                            client = get_gspread_client()
-                                            if client:
-                                                sheet = get_sheet(client)
-                                                if sheet:
-                                                    try:
-                                                        ws = sheet.worksheet("Rates")
-                                                        rows = [[r['Date'], r['Bank Name'], r['Loan Type'], r['Rate'], r['APR']] for r in new_rows]
-                                                        ws.append_rows(rows)
-                                                    except:
-                                                        pass
+                                            save_config(new_config)
+                                            
+                                            # Construct success message
+                                            rates_msg = []
+                                            new_rows = []
+                                            
+                                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            if last_refreshed:
+                                                timestamp = last_refreshed.strftime("%Y-%m-%d %H:%M:%S")
 
-                                        rates_str = " and ".join(rates_msg)
-                                        msg = f"Successfully found Mortgage Loan Rates {rates_str}, added to list! (Refresh to view)"
-                                        
-                                        st.success(msg)
-                                else:
-                                    msg = "No rates found on page."
-                                    st.error("Could not find any rates on the page. Please check the URL and ensure the rates are visible.")
-                            except subprocess.CalledProcessError as e:
-                                st.error(f"Error analyzing URL: {e}")
-                            except json.JSONDecodeError:
-                                st.error("Failed to parse configuration output.")
-                            except Exception as e:
-                                st.error(f"Unexpected error: {e}")
+                                            for label, data in found_values.items():
+                                                rate = data['rate']
+                                                apr = data['apr']
+                                                rates_msg.append(f"{label}: {rate}")
+                                                
+                                                new_rows.append({
+                                                    "Date": timestamp,
+                                                    "Bank Name": new_config['name'],
+                                                    "Loan Type": label,
+                                                    "Rate": rate,
+                                                    "APR": apr
+                                                })
+                                            
+                                            # Append to Sheet
+                                            if new_rows:
+                                                client = get_gspread_client()
+                                                if client:
+                                                    sheet = get_sheet(client)
+                                                    if sheet:
+                                                        try:
+                                                            ws = sheet.worksheet("Rates")
+                                                            rows = [[r['Date'], r['Bank Name'], r['Loan Type'], r['Rate'], r['APR']] for r in new_rows]
+                                                            ws.append_rows(rows)
+                                                        except:
+                                                            pass
+
+                                            rates_str = " and ".join(rates_msg)
+                                            msg = f"Successfully found Mortgage Loan Rates {rates_str}, added to list! (Refresh to view)"
+                                            
+                                            st.success(msg)
+                                    else:
+                                        msg = "No rates found on page."
+                                        st.error("Could not find any rates on the page. Please check the URL and ensure the rates are visible.")
+                                except subprocess.CalledProcessError as e:
+                                    st.error(f"Error analyzing URL: {e}")
+                                except json.JSONDecodeError:
+                                    st.error("Failed to parse configuration output.")
+                                except Exception as e:
+                                    st.error(f"Unexpected error: {e}")
