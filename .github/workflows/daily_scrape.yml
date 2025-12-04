@@ -1,0 +1,45 @@
+name: Daily Rate Scrape
+
+on:
+  schedule:
+    # 11 AM ET is 16:00 UTC (Standard Time) or 15:00 UTC (Daylight Savings)
+    # Let's set it to 16:00 UTC which is 11 AM EST / 12 PM EDT
+    - cron: '0 16 * * *'
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Create secrets.toml
+        run: |
+          mkdir -p .streamlit
+          echo "[gcp_service_account]" > .streamlit/secrets.toml
+          echo "type = \"service_account\"" >> .streamlit/secrets.toml
+          echo "project_id = \"${{ secrets.GCP_PROJECT_ID }}\"" >> .streamlit/secrets.toml
+          echo "private_key_id = \"${{ secrets.GCP_PRIVATE_KEY_ID }}\"" >> .streamlit/secrets.toml
+          echo "private_key = \"${{ secrets.GCP_PRIVATE_KEY }}\"" >> .streamlit/secrets.toml
+          echo "client_email = \"${{ secrets.GCP_CLIENT_EMAIL }}\"" >> .streamlit/secrets.toml
+          echo "client_id = \"${{ secrets.GCP_CLIENT_ID }}\"" >> .streamlit/secrets.toml
+          echo "auth_uri = \"https://accounts.google.com/o/oauth2/auth\"" >> .streamlit/secrets.toml
+          echo "token_uri = \"https://oauth2.googleapis.com/token\"" >> .streamlit/secrets.toml
+          echo "auth_provider_x509_cert_url = \"https://www.googleapis.com/oauth2/v1/certs\"" >> .streamlit/secrets.toml
+          echo "client_x509_cert_url = \"${{ secrets.GCP_CLIENT_CERT_URL }}\"" >> .streamlit/secrets.toml
+          echo "universe_domain = \"googleapis.com\"" >> .streamlit/secrets.toml
+
+      - name: Run Scraper
+        run: python loan_rate_agent.py
