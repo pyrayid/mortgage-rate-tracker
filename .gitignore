@@ -1,0 +1,18 @@
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Local Data (since we migrated to Sheets)
+loan_rates.csv
+bank_configs.json
+submission_log.txt
+error_log.txt
+
+# Keys
+service_account.json
